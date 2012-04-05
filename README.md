@@ -1,24 +1,29 @@
-# Project Nbq
+# nbq
 
-Welcome to your nbq project!  To make sure things are working
-properly, you may want to:
+Implements a very simple non-blocking queue in Scala, which provides higher throughput
+than the standard bounded BlockingQueues in java.util.concurrent.
 
     $ sbt update test
 
-There is a tutorial for what to do next, which you can find in the
-scala-bootstrapper README.rdoc file.
+# Caveat emptor
 
-# Configuring Intellij
+This project has VERY few tests, and may dequeue fortune cookie messages rather than the
+entries you've enqueued. You probably shouldn't use this implementation: instead, think
+of it as motivation to switch to Doug Lea's non-blocking ForkJoinPool.
 
-If you want to setup Intellij, it has to happen off to the side:
+# Performance
 
-    $ sbt
-    > *sbtIdeaRepo at http://mpeltonen.github.com/maven/
-    > *idea is com.github.mpeltonen sbt-idea-processor 0.4.0
-    > update
-    > idea
+The latest performance numbers vs ArrayBlockingQueue (`abq`) and LinkedBlockingQueue (`lbq`)
+are contained in `bench.txt`. A summary:
 
-# Documenting your project
+    cap	sendrs	recvrs	nbq(ms)	abq(ms)	lbq(ms)
+    112	1	1	1484	3745	3726
+    112	5	5	1490	5279	4774
+    112	9	9	1199	8443	4832
+    112	13	13	1392	9912	4753
+    112	17	17	1370	10904	4715
+    112	21	21	1321	10104	4742
+    112	25	25	1308	12528	4908
+    112	29	29	1374	13906	4909
+    112	33	33	1160	12031	4670
 
-Add documentation here!  Eventually, you'll be able to publish this to
-a web site for the world to easily find and read.
