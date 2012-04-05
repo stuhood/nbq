@@ -1,6 +1,7 @@
 package com.twitter.nbq
 
 import java.util.concurrent.atomic.AtomicLong
+import scala.annotation.tailrec
 
 object NonBlockingQueue {
   /** Hide specialization behind a factory function. */
@@ -17,35 +18,39 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   // the position of the next produced item
   val tailRef = new AtomicLong(0)
 
-  def enqueue(e: T): Unit = {
-    var tail: Long = -1
-    while (true) {
-      tail = tailRef.get
-      if (tail - headRef.get <= capacity && tailRef.compareAndSet(tail, tail + 1)) {
-        println("enqueue: " + tail + ", " + (tail % capacity))
-        // we now own the slot at 'tail'
-        buffer((tail % capacity).toInt) = e
-        // loop forever to increment readRef to indicate the position is readable:
-        // this prevents interleaving of the tail/read increments
-        do {} while (!readRef.compareAndSet(tail, tail + 1))
-        // success
-        return
+  @tailrec
+  final def enqueue(e: T): Unit = {
+    val tail = tailRef.get
+    val head = headRef.get
+    if (tail - head < capacity && tailRef.compareAndSet(tail, tail + 1)) {
+      println("++: " + head + "/" + tail)
+      // we now own the slot at 'tail'
+      buffer((tail % capacity).toInt) = e
+      // loop forever to increment readRef to indicate the position is readable:
+      // this prevents interleaving of the tail/read increments
+      while (!readRef.compareAndSet(tail, tail + 1)) {
+        println("++: contended at %d".format(tail))
       }
-      println("enqueue: busy at %d in %s".format(tail, Thread.currentThread.getName))
+      return // success
+    } else {
+      println("++: busy at %d/%d in %s"
+        .format(head, tail, Thread.currentThread.getName))
+      enqueue(e)
     }
   }
 
-  def dequeue(): T = {
-    var head = headRef.get
-    // we may not read past the readRef
-    while (readRef.get - head > 0) {
-      if (headRef.compareAndSet(head, head + 1)) {
-        println("dequeue: " + head + ", " + (head % capacity))
-        // we now own the slot at 'head'
-        return buffer((head % capacity).toInt);
-      }
-      head = headRef.get
+  @tailrec
+  final def dequeue(): T = {
+    val head = headRef.get
+    val read = readRef.get
+    if (read - head > 0 && headRef.compareAndSet(head, head + 1)) {
+      println("--: " + head + "/" + read)
+      // we now own the slot at 'head'
+      buffer((head % capacity).toInt)
+    } else {
+      println("--: busy at %d/%d in %s"
+        .format(head, read, Thread.currentThread.getName))
+      dequeue()
     }
-    throw new Exception("Queue is empty: TODO: implement adaptive blocking.")
   }
 }
