@@ -38,7 +38,7 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
       // success
       return
     } else {
-      if (attempt % 16 == 0) {
+      if ((Thread.currentThread.getId - attempt) % 64 == 0) {
         //println("++: busy attempt %d at %d/%d".format(attempt, write, tail))
         Thread.`yield`
       }
@@ -59,7 +59,7 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
       // success
       e
     } else {
-      if (attempt % 16 == 0) {
+      if ((Thread.currentThread.getId - attempt) % 64 == 0) {
         //println("--: busy attempt %d at %d/%d".format(attempt, head, read))
         Thread.`yield`
       }

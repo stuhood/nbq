@@ -33,17 +33,17 @@ class NonBlockingQueueSpec extends Specification {
     }
 
     "many senders, many receivers" in {
-      System.err.println("cap\texch\tsendrs\trecvrs\tnbq\tabq\tlbq")
-      val exchanged = 1000000
+      System.err.println("cap\tsendrs\trecvrs\tnbq\tabq\tlbq")
+      val exchanged = 10000000
       for {
-        sendrs <- 2 to 10 by 2
-        recvrs <- 2 to 10 by 2
-        capacity <- 10 to 100 by 25
+        sendrs <- 2 to 64 by 4
+        recvrs <- 2 to 64 by 4
+        capacity <- 16 to 256 by 32
       } {
         System.err.print(
-          "%d\t%d\t%d\t%d\t".format(capacity, exchanged, sendrs, recvrs)
+          "%d\t%d\t%d\t".format(capacity, sendrs, recvrs)
         )
-        val times = Seq(Queue.nbq _,Queue.abq _, Queue.lbq _).map { q =>
+        val times = Seq(Queue.nbq _, Queue.abq _, Queue.lbq _).map { q =>
           sendrecv(q(capacity), exchanged, sendrs, recvrs)
         }
         System.err.println("%d\t%d\t%d".format(times: _*))
@@ -62,9 +62,9 @@ object NonBlockingQueueSpec {
 
   def sendrecv(
     queue: Queue[String],
-    roughExchange: Int = 1000000,
-    sendrCount: Int = 4,
-    recvrCount: Int = 4
+    roughExchange: Int,
+    sendrCount: Int,
+    recvrCount: Int
   ): Long = {
     val exchangePerSendr = roughExchange / sendrCount
     val exchange = exchangePerSendr * sendrCount
@@ -97,17 +97,12 @@ object NonBlockingQueueSpec {
         override def toString = q.getClass.getSimpleName
       }
 
-    def abq(capacity: Int) =
-      new Queue[String] {
-        val q = new java.util.concurrent.ArrayBlockingQueue[String](capacity)
-        def enqueue(e: String) = q.put(e)
-        def dequeue(): String = q.take()
-        override def toString = q.getClass.getSimpleName
-      }
-
+    def abq(capacity: Int): Queue[String] =
+      bq(new java.util.concurrent.ArrayBlockingQueue[String](capacity, false))
     def lbq(capacity: Int) =
+      bq(new java.util.concurrent.LinkedBlockingQueue[String](capacity))
+    private def bq(q: java.util.concurrent.BlockingQueue[String]) =
       new Queue[String] {
-        val q = new java.util.concurrent.LinkedBlockingQueue[String](capacity)
         def enqueue(e: String) = q.put(e)
         def dequeue(): String = q.take()
         override def toString = q.getClass.getSimpleName
