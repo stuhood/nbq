@@ -8,6 +8,7 @@ object NonBlockingQueue {
     new NonBlockingQueue(capacity)
 }
 class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
+  val buffer = new Array[T](capacity)
   // the invariant is that head <= read <= tail:
   // the position of the next unconsumed item
   val headRef = new AtomicLong(0)
@@ -15,12 +16,12 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   val readRef = new AtomicLong(0)
   // the position of the next produced item
   val tailRef = new AtomicLong(0)
-  val buffer = new Array[T](capacity)
 
   def enqueue(e: T): Unit = {
-    var tail = tailRef.get
-    while (tail - headRef.get <= capacity) {
-      if (tailRef.compareAndSet(tail, tail + 1)) {
+    var tail: Long = -1
+    while (true) {
+      tail = tailRef.get
+      if (tail - headRef.get <= capacity && tailRef.compareAndSet(tail, tail + 1)) {
         println("enqueue: " + tail + ", " + (tail % capacity))
         // we now own the slot at 'tail'
         buffer((tail % capacity).toInt) = e
@@ -28,11 +29,10 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
         // this prevents interleaving of the tail/read increments
         do {} while (!readRef.compareAndSet(tail, tail + 1))
         // success
-        return;
+        return
       }
-      tail = tailRef.get
+      println("enqueue: busy at %d in %s".format(tail, Thread.currentThread.getName))
     }
-    throw new Exception("Queue is full: TODO: implement adaptive blocking.")
   }
 
   def dequeue(): T = {
