@@ -1,6 +1,6 @@
 package com.twitter.nbq
 
-import java.util.concurrent.{Callable, Executors}
+import java.util.concurrent.{Callable, Executors, atomic}
 
 import org.specs.Specification
 import NonBlockingQueueSpec._
@@ -12,12 +12,12 @@ class NonBlockingQueueSpec extends Specification {
       for (i <- 0 until 10) {
         nbq.enqueue(i)
         nbq.enqueue(i + 1)
-        nbq.dequeue mustEqual i
-        nbq.dequeue mustEqual i + 1
+        nbq.dequeue() mustEqual i
+        nbq.dequeue() mustEqual i + 1
       }
     }
 
-    "multithreaded enqueue and dequeue" in {
+    "single sender, single receiver" in {
       val nbq = NonBlockingQueue[Int](2)
       val exchange = 10
       val sendr = fork {
@@ -31,6 +31,24 @@ class NonBlockingQueueSpec extends Specification {
       // block for completion
       sendr.get; recvr.get
     }
+
+    "many senders, many receivers" in {
+      System.err.println("cap\texch\tsendrs\trecvrs\tnbq\tabq\tlbq")
+      val exchanged = 1000000
+      for {
+        sendrs <- 2 to 10 by 2
+        recvrs <- 2 to 10 by 2
+        capacity <- 10 to 100 by 25
+      } {
+        System.err.print(
+          "%d\t%d\t%d\t%d\t".format(capacity, exchanged, sendrs, recvrs)
+        )
+        val times = Seq(Queue.nbq _,Queue.abq _, Queue.lbq _).map { q =>
+          sendrecv(q(capacity), exchanged, sendrs, recvrs)
+        }
+        System.err.println("%d\t%d\t%d".format(times: _*))
+      }
+    }
   }
 }
 object NonBlockingQueueSpec {
@@ -41,4 +59,62 @@ object NonBlockingQueueSpec {
         def call(): T = body
       }
     )
+
+  def sendrecv(
+    queue: Queue[String],
+    roughExchange: Int = 1000000,
+    sendrCount: Int = 4,
+    recvrCount: Int = 4
+  ): Long = {
+    val exchangePerSendr = roughExchange / sendrCount
+    val exchange = exchangePerSendr * sendrCount
+    val remaining = new atomic.AtomicInteger(exchange)
+    val start = System.currentTimeMillis
+    val sendrs = (0 until sendrCount).map { _ =>
+      fork {
+        for (i <- 0 until exchangePerSendr)
+          queue.enqueue(i.toString)
+      }
+    }
+    val recvrs = (0 until recvrCount).map { _ =>
+      fork {
+        while (remaining.getAndDecrement > 0)
+          queue.dequeue()
+      }
+    }
+    // block for completion
+    for (task <- sendrs ++ recvrs)
+      task.get
+    System.currentTimeMillis - start
+  }
+
+  object Queue {
+    def nbq(capacity: Int) =
+      new Queue[String] {
+        val q = NonBlockingQueue[String](capacity)
+        def enqueue(e: String) = q.enqueue(e)
+        def dequeue(): String = q.dequeue()
+        override def toString = q.getClass.getSimpleName
+      }
+
+    def abq(capacity: Int) =
+      new Queue[String] {
+        val q = new java.util.concurrent.ArrayBlockingQueue[String](capacity)
+        def enqueue(e: String) = q.put(e)
+        def dequeue(): String = q.take()
+        override def toString = q.getClass.getSimpleName
+      }
+
+    def lbq(capacity: Int) =
+      new Queue[String] {
+        val q = new java.util.concurrent.LinkedBlockingQueue[String](capacity)
+        def enqueue(e: String) = q.put(e)
+        def dequeue(): String = q.take()
+        override def toString = q.getClass.getSimpleName
+      }
+  }
+  trait Queue[T] {
+    def enqueue(e: T): Unit
+    def dequeue(): T
+  }
 }
