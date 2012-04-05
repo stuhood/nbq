@@ -5,17 +5,11 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.annotation.tailrec
 
 class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
-  val buffer = new Array[T](capacity)
-  // the high order bit in the read and write positions is used to indicate
+  // the high order bit in the read and write position is used to indicate
   // that a thread is currently reading/writing: exactly one thread may be
   // in that position at a time
-  // the position of the next producable item
-  //val writeRef = new AtomicLong(0)
-  // the position of the next unconsumed item
   val headRef = new AtomicLong(0)
-  // the position of the next consumable item
-  //val readRef = new AtomicLong(0)
-  // the position of the next produced item
+  val buffer = new Array[T](capacity)
   val tailRef = new AtomicLong(0)
 
   private final def abs(long: Long): Long =

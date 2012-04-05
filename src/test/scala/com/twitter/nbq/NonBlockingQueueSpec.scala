@@ -35,6 +35,7 @@ class NonBlockingQueueSpec extends Specification {
     "many senders, many receivers" in {
       System.err.println("cap\tsendrs\trecvrs\tnbq\tabq\tlbq")
       val exchanged = 10000000
+      val qcons = Seq[Int => Queue[String]](Queue.nbq _, Queue.abq _, Queue.lbq _)
       for {
         sendrs <- 2 to 64 by 4
         recvrs <- 2 to 64 by 4
@@ -43,7 +44,7 @@ class NonBlockingQueueSpec extends Specification {
         System.err.print(
           "%d\t%d\t%d\t".format(capacity, sendrs, recvrs)
         )
-        val times = Seq(Queue.nbq _, Queue.abq _, Queue.lbq _).map { q =>
+        val times = qcons.map { q =>
           sendrecv(q(capacity), exchanged, sendrs, recvrs)
         }
         System.err.println("%d\t%d\t%d".format(times: _*))
@@ -89,26 +90,26 @@ object NonBlockingQueueSpec {
   }
 
   object Queue {
-    def nbq(capacity: Int) =
-      new Queue[String] {
-        val q = NonBlockingQueue[String](capacity)
-        def enqueue(e: String) = q.enqueue(e)
-        def dequeue(): String = q.dequeue()
+    def nbq[T : Manifest](capacity: Int) =
+      new Queue[T] {
+        val q = NonBlockingQueue[T](capacity)
+        def enqueue(e: T) = q.enqueue(e)
+        def dequeue(): T = q.dequeue()
         override def toString = q.getClass.getSimpleName
       }
 
-    def abq(capacity: Int): Queue[String] =
-      bq(new java.util.concurrent.ArrayBlockingQueue[String](capacity, false))
-    def lbq(capacity: Int) =
-      bq(new java.util.concurrent.LinkedBlockingQueue[String](capacity))
-    private def bq(q: java.util.concurrent.BlockingQueue[String]) =
-      new Queue[String] {
-        def enqueue(e: String) = q.put(e)
-        def dequeue(): String = q.take()
+    def abq[T](capacity: Int) =
+      bq(new java.util.concurrent.ArrayBlockingQueue[T](capacity, false))
+    def lbq[T](capacity: Int) =
+      bq(new java.util.concurrent.LinkedBlockingQueue[T](capacity))
+    private def bq[T](q: java.util.concurrent.BlockingQueue[T]) =
+      new Queue[T] {
+        def enqueue(e: T) = q.put(e)
+        def dequeue(): T = q.take()
         override def toString = q.getClass.getSimpleName
       }
   }
-  trait Queue[T] {
+  trait Queue[@specialized T] {
     def enqueue(e: T): Unit
     def dequeue(): T
   }
