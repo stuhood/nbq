@@ -23,17 +23,26 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   final def enqueue(e: T, attempt: Int = 1): Unit = {
     val tail = tailRef.get
     val write = abs(headRef.get)
-    if (!locked(tail) && tail - write < capacity && tailRef.compareAndSet(tail, lock(tail))) {
-      //println("++: " + write + "/" + tail)
-      // we now own the slot at 'tail'
-      buffer((tail % capacity).toInt) = e
-      // unlock position
-      tailRef.set(tail + 1)
-      // success
-      return
+    if (locked(tail)) {
+      // contended: busy wait
+      enqueue(e, attempt + 1)
+    } else if (tail - write < capacity) {
+      if (tailRef.compareAndSet(tail, lock(tail))) {
+        //println("++: " + write + "/" + tail)
+        // we now own the slot at 'tail'
+        buffer((tail % capacity).toInt) = e
+        // unlock position
+        tailRef.set(tail + 1)
+        // success
+        return
+      } else {
+        // contended: busy wait
+        enqueue(e, attempt + 1)
+      }
     } else {
+      // is full
       if ((Thread.currentThread.getId - attempt) % 64 == 0) {
-        //println("++: busy attempt %d at %d/%d".format(attempt, write, tail))
+        //println("++: full attempt %d at %d/%d".format(attempt, write, tail))
         Thread.`yield`
       }
       enqueue(e, attempt + 1)
@@ -44,17 +53,26 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   final def dequeue(attempt: Int = 1): T = {
     val head = headRef.get
     val read = abs(tailRef.get)
-    if (!locked(head) && read - head > 0 && headRef.compareAndSet(head, lock(head))) {
-      //println("--: " + head + "/" + read)
-      // we now own the slot at 'head'
-      val e = buffer((head % capacity).toInt)
-      // unlock position
-      headRef.set(head + 1)
-      // success
-      e
+    if (locked(head)) {
+      // contended: busy wait
+      dequeue(attempt + 1)
+    } else if (read - head > 0) {
+      if (headRef.compareAndSet(head, lock(head))) {
+        //println("--: " + head + "/" + read)
+        // we now own the slot at 'head'
+        val e = buffer((head % capacity).toInt)
+        // unlock position
+        headRef.set(head + 1)
+        // success
+        e
+      } else {
+        // contended: busy wait
+        dequeue(attempt + 1)
+      }
     } else {
+      // is empty
       if ((Thread.currentThread.getId - attempt) % 64 == 0) {
-        //println("--: busy attempt %d at %d/%d".format(attempt, head, read))
+        //println("--: empty attempt %d at %d/%d".format(attempt, head, read))
         Thread.`yield`
       }
       dequeue(attempt + 1)
