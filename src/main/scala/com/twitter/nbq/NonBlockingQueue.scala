@@ -12,13 +12,6 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   val buffer = new Array[T](capacity)
   val tailRef = new AtomicLong(0)
 
-  private final def abs(long: Long): Long =
-    ABSOLUTE_MASK & long
-  private final def locked(long: Long): Boolean =
-    (SIGN_MASK & long) == SIGN_MASK
-  private final def lock(long: Long): Long =
-    SIGN_MASK | long
-
   @tailrec
   final def enqueue(e: T, attempt: Int = 1): Unit = {
     val tail = tailRef.get
@@ -28,7 +21,6 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
       enqueue(e, attempt + 1)
     } else if (tail - write < capacity) {
       if (tailRef.compareAndSet(tail, lock(tail))) {
-        //println("++: " + write + "/" + tail)
         // we now own the slot at 'tail'
         buffer((tail % capacity).toInt) = e
         // unlock position
@@ -40,9 +32,8 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
         enqueue(e, attempt + 1)
       }
     } else {
-      // is full
+      // is full: TODO: a true non-blocking structure would expand here
       if ((Thread.currentThread.getId - attempt) % 64 == 0) {
-        //println("++: full attempt %d at %d/%d".format(attempt, write, tail))
         Thread.`yield`
       }
       enqueue(e, attempt + 1)
@@ -58,7 +49,6 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
       dequeue(attempt + 1)
     } else if (read - head > 0) {
       if (headRef.compareAndSet(head, lock(head))) {
-        //println("--: " + head + "/" + read)
         // we now own the slot at 'head'
         val e = buffer((head % capacity).toInt)
         // unlock position
@@ -72,7 +62,6 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
     } else {
       // is empty
       if ((Thread.currentThread.getId - attempt) % 64 == 0) {
-        //println("--: empty attempt %d at %d/%d".format(attempt, head, read))
         Thread.`yield`
       }
       dequeue(attempt + 1)
@@ -86,4 +75,11 @@ object NonBlockingQueue {
 
   val SIGN_MASK: Long = 1L << 63
   val ABSOLUTE_MASK: Long = ~(SIGN_MASK)
+
+  private final def abs(long: Long): Long =
+    ABSOLUTE_MASK & long
+  private final def locked(long: Long): Boolean =
+    (SIGN_MASK & long) == SIGN_MASK
+  private final def lock(long: Long): Long =
+    SIGN_MASK | long
 }
