@@ -38,9 +38,9 @@ class NonBlockingQueueSpec extends Specification {
       val exchanged = 10000000
       val qcons = Seq[Int => Queue[String]](Queue.nbq _, Queue.abq _, Queue.lbq _, Queue.clq _)
       for {
-        sendrs <- 2 to 64 by 4
-        recvrs <- 2 to 64 by 4
-        capacity <- 16 to 256 by 32
+        sendrs <- 2 to 64 by 8
+        recvrs <- 2 to 64 by 8
+        capacity <- 16 to 1024 by 256
       } {
         System.err.print(
           "%d\t%d\t%d\t".format(capacity, sendrs, recvrs)
