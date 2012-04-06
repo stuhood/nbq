@@ -13,12 +13,12 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
   val tailRef = new AtomicLong(0)
 
   @tailrec
-  final def enqueue(e: T, attempt: Int = 1): Unit = {
+  final def enqueue(e: T): Unit = {
     val tail = tailRef.get
     val write = abs(headRef.get)
     if (locked(tail)) {
       // contended: busy wait
-      enqueue(e, attempt + 1)
+      enqueue(e)
     } else if (tail - write < capacity) {
       if (tailRef.compareAndSet(tail, lock(tail))) {
         // we now own the slot at 'tail'
@@ -29,24 +29,25 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
         return
       } else {
         // contended: busy wait
-        enqueue(e, attempt + 1)
+        enqueue(e)
       }
     } else {
-      // is full: TODO: a true non-blocking structure would expand here
-      if ((Thread.currentThread.getId - attempt) % 64 == 0) {
+      // is full: semi-randomly yield, then spin
+      // TODO: a true non-blocking structure would expand here
+      if ((Thread.currentThread.getId - tail) % 64 == 0) {
         Thread.`yield`
       }
-      enqueue(e, attempt + 1)
+      enqueue(e)
     }
   }
 
   @tailrec
-  final def dequeue(attempt: Int = 1): T = {
+  final def dequeue(): T = {
     val head = headRef.get
     val read = abs(tailRef.get)
     if (locked(head)) {
       // contended: busy wait
-      dequeue(attempt + 1)
+      dequeue()
     } else if (read - head > 0) {
       if (headRef.compareAndSet(head, lock(head))) {
         // we now own the slot at 'head'
@@ -57,14 +58,14 @@ class NonBlockingQueue[@specialized T : Manifest] private (capacity: Int) {
         e
       } else {
         // contended: busy wait
-        dequeue(attempt + 1)
+        dequeue()
       }
     } else {
-      // is empty
-      if ((Thread.currentThread.getId - attempt) % 64 == 0) {
+      // is empty: semi-randomly yield, then spin
+      if ((Thread.currentThread.getId - head) % 64 == 0) {
         Thread.`yield`
       }
-      dequeue(attempt + 1)
+      dequeue()
     }
   }
 }
