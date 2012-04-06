@@ -1,9 +1,10 @@
 package com.twitter.nbq
+import NonBlockingQueueSpec._
 
 import java.util.concurrent.{Callable, Executors, atomic}
+import scala.annotation.tailrec
 
 import org.specs.Specification
-import NonBlockingQueueSpec._
 
 class NonBlockingQueueSpec extends Specification {
   "NonBlockingQueue" should {
@@ -33,9 +34,9 @@ class NonBlockingQueueSpec extends Specification {
     }
 
     "many senders, many receivers" in {
-      System.err.println("cap\tsendrs\trecvrs\tnbq\tabq\tlbq")
+      System.err.println("cap\tsendrs\trecvrs\tnbq\tabq\tlbq\tclq")
       val exchanged = 10000000
-      val qcons = Seq[Int => Queue[String]](Queue.nbq _, Queue.abq _, Queue.lbq _)
+      val qcons = Seq[Int => Queue[String]](Queue.nbq _, Queue.abq _, Queue.lbq _, Queue.clq _)
       for {
         sendrs <- 2 to 64 by 4
         recvrs <- 2 to 64 by 4
@@ -47,7 +48,7 @@ class NonBlockingQueueSpec extends Specification {
         val times = qcons.map { q =>
           sendrecv(q(capacity), exchanged, sendrs, recvrs)
         }
-        System.err.println("%d\t%d\t%d".format(times: _*))
+        System.err.println("%d\t%d\t%d\t%d".format(times: _*))
       }
     }
   }
@@ -95,7 +96,6 @@ object NonBlockingQueueSpec {
         val q = NonBlockingQueue[T](capacity)
         def enqueue(e: T) = q.enqueue(e)
         def dequeue(): T = q.dequeue()
-        override def toString = q.getClass.getSimpleName
       }
 
     def abq[T](capacity: Int) =
@@ -106,7 +106,21 @@ object NonBlockingQueueSpec {
       new Queue[T] {
         def enqueue(e: T) = q.put(e)
         def dequeue(): T = q.take()
-        override def toString = q.getClass.getSimpleName
+      }
+
+    /** CLQ is truly non-blocking, so capacity is ignored, and dequeue must busywait. */
+    def clq[T](ignored: Int) =
+      new Queue[T] {
+        val q = new java.util.concurrent.ConcurrentLinkedQueue[T]
+        def enqueue(e: T) = q.add(e)
+        @tailrec
+        def dequeue(): T = {
+          val t = q.poll()
+          if (t != null)
+            t
+          else
+            dequeue()
+        }
       }
   }
   trait Queue[@specialized T] {
